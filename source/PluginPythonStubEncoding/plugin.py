@@ -3,6 +3,7 @@
 import json
 import math
 from pathlib import Path
+import uuid
 
 import commsPluginBindings as bindings
 
@@ -27,11 +28,47 @@ class PluginPythonStubEncoding(bindings.IEncodingComponent):
         self.sdk = sdk
         self.role_name = role_name
         self.plugin_directory = plugin_config.pluginDirectory
+        self.logging_directory = plugin_config.loggingDirectory
         self.metadata = metadata
+        self.save_encoded_output_handle = None
+        self.save_encoded_outputs = False
+        response = self.sdk.requestPluginUserInput(
+            "save-encoded-output",
+            "Write encoded outputs to the logging directory for offline analysis? (true/false; default false)",
+            False,
+        )
+        if response.status == bindings.CM_OK:
+            self.save_encoded_output_handle = response.handle
         self.sdk.updateState(bindings.COMPONENT_STATE_STARTED)
 
     def onUserInputReceived(self, handle, answered, response):
-        return bindings.COMPONENT_OK
+        if handle != self.save_encoded_output_handle or self.save_encoded_output_handle is None:
+            return bindings.COMPONENT_ERROR
+        self.save_encoded_output_handle = None
+        if not answered:
+            self.save_encoded_outputs = False
+            return bindings.COMPONENT_OK
+        normalized_response = response.strip().lower()
+        if normalized_response in ("true", "1"):
+            self.save_encoded_outputs = True
+            return bindings.COMPONENT_OK
+        if normalized_response in ("false", "0"):
+            self.save_encoded_outputs = False
+            return bindings.COMPONENT_OK
+        self.save_encoded_outputs = False
+        return bindings.COMPONENT_ERROR
+
+    def _persist_encoded_output(self, handle, encoded):
+        if not self.save_encoded_outputs:
+            return
+        if not self.logging_directory:
+            raise OSError("Logging directory is unavailable")
+        output_directory = Path(self.logging_directory) / "encoding-outputs"
+        output_directory.mkdir(parents=True, exist_ok=True)
+        output_path = output_directory / "encoded-output-{}-{}.bin".format(
+            handle, uuid.uuid4().hex
+        )
+        output_path.write_bytes(encoded)
 
     def getEncodingProperties(self):
         properties = bindings.EncodingProperties()
@@ -52,6 +89,7 @@ class PluginPythonStubEncoding(bindings.IEncodingComponent):
             encoded = codec.encode(payload, params.json)
             if not isinstance(encoded, bytes):
                 raise TypeError("codec.encode must return bytes")
+            self._persist_encoded_output(handle, encoded)
             output = bindings.ByteVector(encoded)
         except Exception:
             self.sdk.onBytesEncoded(handle, bindings.ByteVector(), bindings.ENCODE_FAILED)

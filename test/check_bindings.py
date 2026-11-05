@@ -16,6 +16,13 @@ class RecordingSdk(bindings.IEncodingSdk):
         super().__init__()
         self.events = []
 
+    def requestPluginUserInput(self, key, prompt, cache):
+        response = bindings.ChannelResponse()
+        response.status = bindings.CM_OK
+        response.handle = 10
+        self.events.append(("user-input", key, prompt, cache))
+        return response
+
     def updateState(self, state):
         self.events.append(("state", state))
         response = bindings.ChannelResponse()
@@ -39,11 +46,15 @@ def main():
     sdk = RecordingSdk()
     metadata = '{"mime_type":"application/octet-stream","max_bytes":256,"encoding_time_seconds":0.25}'
     with patch.object(Path, "read_text", return_value=metadata):
-        component = plugin.createEncoding("pythonStub", sdk, "", SimpleNamespace(pluginDirectory="/kits/test"))
+        component = plugin.createEncoding(
+            "pythonStub", sdk, "",
+            SimpleNamespace(pluginDirectory="/kits/test", loggingDirectory="/tmp/test-logs"),
+        )
     params = bindings.EncodingParameters()
     params.json = "{}"
     assert component.getEncodingProperties().type == "application/octet-stream"
     assert component.getEncodingPropertiesForParameters(params).maxBytes == 256
+    assert component.onUserInputReceived(10, False, "") == bindings.COMPONENT_OK
     for payload in (b"", bytes(range(256))):
         vector = bindings.ByteVector(payload)
         assert bytes(vector) == payload

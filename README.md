@@ -31,7 +31,8 @@ instructions; use their own generated names rather than the template names below
   accept native `bytes` and the `EncodingParameters.json` string, and must return
   native `bytes`. Parse and validate the parameter JSON here as needed.
 - `source/PluginPythonStubEncoding/plugin.py`: the API adapter, factory, SDK state
-  notification, SWIG byte-vector conversion, capacity checks, and callbacks.
+  notification, SWIG byte-vector conversion, capacity checks, callbacks, and
+  opt-in encoded-output persistence.
 - `source/PluginPythonStubEncoding/metadata.json`: MIME type, raw payload capacity,
   encoding id, and pessimistic encoding time in seconds. The scheduler compares
   `now + encodingTime` with action timestamps in
@@ -49,11 +50,27 @@ Native extensions must match that runtime's Python ABI, architecture, and OS.
 not copy or edit the generated bindings. Python plugin support must be enabled
 in the framework build.
 
-The adapter copies `pluginConfig.pluginDirectory` rather than retaining the
-loader's temporary config wrapper. Copy any other config strings needed by a
-codec during construction. The loader owns component lifetime; do not add a
+The adapter copies `pluginConfig.pluginDirectory` and `loggingDirectory` rather
+than retaining the loader's temporary config wrapper. Copy any other config
+strings needed by a codec during construction. The loader owns component lifetime; do not add a
 Python `destroyEncoding` or manually disown the component. Use SDK user-input
 requests and `onUserInputReceived` if configuration requires them.
+
+### Save encoded output for offline analysis
+
+The adapter requests `save-encoded-output` as an optional user setting. It
+defaults to false; declined, unanswered, or invalid input leaves persistence
+disabled. When enabled, each successful encode writes the exact encoded bytes
+to `<pluginConfig.loggingDirectory>/encoding-outputs/encoded-output-<handle>-<unique>.bin`.
+Decode output is not saved. If saving was explicitly enabled but the file
+cannot be written, the encode reports failure. Payload bytes are never logged.
+
+For integration tests, declare `save-encoded-output` as a boolean with default
+false in the dedicated composition's `channel_parameters`, with `plugin` set to
+that composition ID. Set `<composition-id>.save-encoded-output=true` in each
+integration node's `NodeContribution.params`. Do not change the default in the
+generated plugin. Use synthetic data and treat saved output as test data that
+requires appropriate access and cleanup.
 
 Each accepted operation issues exactly one completion callback using its original
 handle. Codec exceptions, invalid return types, and capacity violations produce
