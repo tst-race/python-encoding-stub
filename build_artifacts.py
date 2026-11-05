@@ -26,9 +26,8 @@ def main():
         parser.error("template metadata is unset; generate a plugin with new_encoding.py first")
     for role in ("client", "server"):
         destination = ROOT / "kit" / "artifacts" / ("linux-" + args.arch + "-" + role) / package
-        if destination.exists():
-            shutil.rmtree(destination)
         shutil.copytree(source / package, destination,
+                        dirs_exist_ok=True,
                         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         shutil.copy2(source / "manifest.json", destination / "manifest.json")
         shutil.copy2(ROOT / "requirements.txt", destination / "requirements.txt")

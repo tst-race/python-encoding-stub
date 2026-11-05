@@ -23,6 +23,7 @@ class GeneratorTests(unittest.TestCase):
             self.assertEqual(metadata, {"encoding_id": "example", "mime_type": "image/png",
                                         "max_bytes": 256, "encoding_time_seconds": 0.5})
             self.assertFalse((output / "new_encoding.py").exists())
+            self.assertFalse((output / "test" / "test_stub_codec.py").exists())
             subprocess.run(["bash", str(output / "run_unit_tests.sh"), "-v"],
                            check=True, capture_output=True, text=True)
             subprocess.run([sys.executable, str(output / "build_artifacts.py"), "--arch", "x86_64"],

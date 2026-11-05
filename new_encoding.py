@@ -58,7 +58,7 @@ def main():
         relative = source.relative_to(TEMPLATE)
         if (set(relative.parts) & {".git", "__pycache__", "build", "kit", ".venv"}
                 or not source.is_file()
-                or source.name in {"new_encoding.py", "test_generator.py"}):
+                or source.name in {"new_encoding.py", "test_generator.py", "test_stub_codec.py"}):
             continue
         destination = output / str(relative).replace("PluginPythonStubEncoding", package)
         destination.parent.mkdir(parents=True, exist_ok=True)

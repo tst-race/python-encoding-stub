@@ -1,6 +1,7 @@
 """Adapter contract tests with an explicit, test-only bindings double."""
 
 import importlib
+import json
 import tempfile
 import sys
 import types
@@ -22,7 +23,13 @@ for constant in ("COMPONENT_OK", "COMPONENT_ERROR", "ENCODE_OK", "ENCODE_FAILED"
 with patch.dict(sys.modules, {"commsPluginBindings": fake_bindings}):
     plugin = importlib.import_module("PluginPythonStubEncoding.plugin")
 
-METADATA = '{"mime_type":"text/plain","max_bytes":256,"encoding_time_seconds":0.25}'
+METADATA_PATH = SOURCE / "PluginPythonStubEncoding" / "metadata.json"
+TEMPLATE_METADATA = {
+    "encoding_id": "pythonStub",
+    "mime_type": "text/plain",
+    "max_bytes": 256,
+    "encoding_time_seconds": 0.25,
+}
 
 
 class ComponentTests(unittest.TestCase):
@@ -36,7 +43,11 @@ class ComponentTests(unittest.TestCase):
         self.config = types.SimpleNamespace(
             pluginDirectory="/kits/example", loggingDirectory=self.temp_dir.name
         )
-        with patch.object(Path, "read_text", return_value=METADATA):
+        self.metadata = json.loads(METADATA_PATH.read_text())
+        if any(self.metadata.get(key) is None for key in
+               ("mime_type", "max_bytes", "encoding_time_seconds")):
+            self.metadata = TEMPLATE_METADATA
+        with patch.object(Path, "read_text", return_value=json.dumps(self.metadata)):
             self.component = plugin.createEncoding("pythonStub", self.sdk, "role", self.config)
 
     def tearDown(self):
@@ -54,8 +65,10 @@ class ComponentTests(unittest.TestCase):
         self.assertEqual(self.component.plugin_directory, "/kits/example")
         self.assertFalse(self.component.save_encoded_outputs)
         properties = self.component.getEncodingProperties()
-        self.assertEqual((properties.type, properties.encodingTime), ("text/plain", 0.25))
-        self.assertEqual(self.component.getEncodingPropertiesForParameters(self.params).maxBytes, 256)
+        self.assertEqual((properties.type, properties.encodingTime),
+                 (self.metadata["mime_type"], self.metadata["encoding_time_seconds"]))
+        self.assertEqual(self.component.getEncodingPropertiesForParameters(self.params).maxBytes,
+                 self.metadata["max_bytes"])
         self.assertEqual(self.component.onUserInputReceived(43, False, ""), "COMPONENT_OK")
 
     def test_unconfigured_template_rejects_creation(self):
@@ -63,13 +76,9 @@ class ComponentTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 plugin.createEncoding("pythonStub", self.sdk, "", self.config)
 
-    def test_hooks_are_unimplemented(self):
-        for hook in (plugin.codec.encode, plugin.codec.decode):
-            with self.assertRaises(NotImplementedError):
-                hook(b"", "{}")
-
     def test_all_bytes_and_empty_callbacks(self):
-        for payload in (b"", bytes(range(256))):
+        payload = bytes(range(min(256, self.metadata["max_bytes"])))
+        for payload in (b"", payload):
             with self.subTest(size=len(payload)):
                 for operation in ("encode", "decode"):
                     self.sdk.reset_mock()
@@ -85,8 +94,9 @@ class ComponentTests(unittest.TestCase):
         self.assertEqual(self.component.onUserInputReceived(43, True, "true"),
                          "COMPONENT_OK")
         encoded = b"valid encoded content"
+        payload = b"input"[:self.metadata["max_bytes"]]
         with patch.object(plugin.codec, "encode", return_value=encoded):
-            self.assertEqual(self.component.encodeBytes(44, self.params, b"input"),
+            self.assertEqual(self.component.encodeBytes(44, self.params, payload),
                              "COMPONENT_OK")
         output_directory = Path(self.temp_dir.name) / "encoding-outputs"
         outputs = list(output_directory.glob("encoded-output-44-*.bin"))
@@ -102,13 +112,18 @@ class ComponentTests(unittest.TestCase):
         self.assertFalse(self.component.save_encoded_outputs)
 
     def test_failures_have_one_completion(self):
+        failures = [ValueError("malformed"), NotImplementedError(), "not bytes"]
+        if self.metadata["max_bytes"] <= 1_000_000:
+            failures.append(b"x" * (self.metadata["max_bytes"] + 1))
         for operation in ("encode", "decode"):
-            for result in (ValueError("malformed"), NotImplementedError(), "not bytes", b"x" * 257):
+            for result in failures:
                 with self.subTest(operation=operation, result=type(result).__name__):
                     self.sdk.reset_mock()
                     kwargs = {"side_effect": result} if isinstance(result, Exception) else {"return_value": result}
                     with patch.object(plugin.codec, operation, **kwargs):
-                        content = b"x" * 257 if operation == "encode" and isinstance(result, bytes) else b"x"
+                        content = (b"x" * (self.metadata["max_bytes"] + 1)
+                                   if operation == "encode" and isinstance(result, bytes)
+                                   else b"x")
                         status = getattr(self.component, operation + "Bytes")(9, self.params, content)
                     self.assertEqual(status, "COMPONENT_ERROR")
                     callback = self.sdk.onBytesEncoded if operation == "encode" else self.sdk.onBytesDecoded
@@ -116,9 +131,10 @@ class ComponentTests(unittest.TestCase):
 
     def test_callback_exception_is_not_reported_twice(self):
         self.sdk.onBytesEncoded.side_effect = RuntimeError("SDK failed")
+        payload = b"input"[:self.metadata["max_bytes"]]
         with patch.object(plugin.codec, "encode", return_value=b"ok"):
             with self.assertRaises(RuntimeError):
-                self.component.encodeBytes(1, self.params, b"input")
+                self.component.encodeBytes(1, self.params, payload)
         self.sdk.onBytesEncoded.assert_called_once()
 
 
