@@ -1,0 +1,16 @@
+{
+    "plugins": [
+        {
+            "file_path": "PluginPythonStubEncoding",
+            "plugin_type": "comms",
+            "file_type": "python",
+            "node_type": "any",
+            "python_module": "PluginPythonStubEncoding.plugin",
+            "python_class": "PluginPythonStubEncoding",
+            "channels": [],
+            "transports": [],
+            "usermodels": [],
+            "encodings": ["pythonStub"]
+        }
+    ]
+}

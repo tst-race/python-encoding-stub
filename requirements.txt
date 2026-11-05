@@ -1,0 +1,2 @@
+# Pin the chosen codec library and its runtime dependencies here.
+# commsPluginBindings is supplied by the matching Raceboat runtime, not PyPI.
